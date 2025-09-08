@@ -293,6 +293,50 @@ static string toLower(string s)
 	return s;
 }
 
+// Case-insensitive equals for ASCII headers
+static bool iequals(const std::string& a, const std::string& b)
+{
+	if (a.size() != b.size()) return false;
+	for (size_t i = 0; i < a.size(); ++i)
+	{
+		unsigned char ca = (unsigned char)a[i];
+		unsigned char cb = (unsigned char)b[i];
+		if (std::tolower(ca) != std::tolower(cb)) return false;
+	}
+	return true;
+}
+
+// Extract header value by name (e.g., "Content-Length") from the raw header block
+static std::string getHeaderValue(const char* headersStart, const char* headersEnd, const std::string& name)
+{
+	// iterate line by line
+	const char* p = headersStart;
+	while (p < headersEnd)
+	{
+		const char* lineEnd = (const char*)memchr(p, '\n', headersEnd - p);
+		if (!lineEnd) lineEnd = headersEnd;
+		// line = [p, lineEnd)
+		const char* cr = lineEnd;
+		if (cr > p && *(cr - 1) == '\r') --cr; // strip CR
+
+		// split by first ':'
+		const char* colon = (const char*)memchr(p, ':', cr - p);
+		if (colon)
+		{
+			std::string key(p, colon - p);
+			// skip space after colon
+			const char* valStart = colon + 1;
+			if (valStart < cr && *valStart == ' ') ++valStart;
+			std::string val(valStart, cr - valStart);
+
+			if (iequals(key, name)) return val;
+		}
+
+		p = lineEnd + 1; // move to next line
+	}
+	return "";
+}
+
 static string getQueryParam(const string& url, const string& key)
 {
 	size_t q = url.find('?');
@@ -409,6 +453,7 @@ void receiveMessage(int index)
 	bool isGET = (_stricmp(method.c_str(), "GET") == 0);
 	bool isHEAD = (_stricmp(method.c_str(), "HEAD") == 0);
 	bool isOPT = (_stricmp(method.c_str(), "OPTIONS") == 0);
+	bool isPOST = (_stricmp(method.c_str(), "POST") == 0);
 
 	if (isGET || isHEAD)
 	{
@@ -488,6 +533,50 @@ void receiveMessage(int index)
 			"text/plain; charset=UTF-8",
 			0,
 			allow);
+	}
+	else if (isPOST)
+	{
+		// Headers span from the end of request line CRLF to headersEnd
+		const char* fullStart = sockets[index].buffer;
+		const char* firstCRLF = strstr(fullStart, "\r\n");
+		const char* headersStart = firstCRLF ? firstCRLF + 2 : fullStart;
+		const char* headersEndPtr = headersEnd; // already computed earlier
+		const char* bodyStart = headersEndPtr + 4;
+
+		// Content-Length is required for our simple POST handling
+		std::string clStr = getHeaderValue(headersStart, headersEndPtr, "Content-Length");
+		int contentLength = 0;
+		if (!clStr.empty())
+		{
+			contentLength = atoi(clStr.c_str()); // safe enough for the assignment
+			if (contentLength < 0) contentLength = 0;
+		}
+
+		// How many body bytes do we actually have right now?
+		int bytesSoFar = sockets[index].len;
+		int headerBytes = (int)(bodyStart - sockets[index].buffer);
+		int haveBody = bytesSoFar - headerBytes;
+
+		// If body not fully received yet, wait for more data
+		if (haveBody < contentLength)
+		{
+			// Do nothing now; more recv calls will append into the same buffer.
+			// When enough data arrives, we'll enter again and proceed.
+			return;
+		}
+
+		// We have the full body (or more). Slice exactly Content-Length bytes.
+		std::string body(bodyStart, bodyStart + contentLength);
+
+		// Print to server console (as required)
+		std::cout << "[POST] Body (" << contentLength << " bytes): " << body << std::endl;
+
+		// Simple 200 OK response
+		std::string html =
+			"<!doctype html><html><head><meta charset=\"UTF-8\"><title>POST OK</title></head>"
+			"<body><h1>POST Received</h1><p>Thank you.</p></body></html>";
+
+		response = buildHttpResponse(html, "200 OK", "text/html; charset=UTF-8");
 	}
 	else
 	{
