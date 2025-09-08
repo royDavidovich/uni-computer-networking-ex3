@@ -342,6 +342,21 @@ static string buildHttpResponse(const string& body, const string& status, const 
 	return headers + body;
 }
 
+// Build only the headers (no body). Use for HEAD/OPTIONS.
+static std::string buildHttpHeaders(const std::string& status, const std::string& contentType, 	size_t contentLength,
+	const std::string& extraHeaders /*may be empty*/)
+{
+	std::string hdr = "HTTP/1.1 " + status + "\r\n";
+	if (!contentType.empty())
+		hdr += "Content-Type: " + contentType + "\r\n";
+	hdr += "Content-Length: " + std::to_string(contentLength) + "\r\n";
+	if (!extraHeaders.empty())
+		hdr += extraHeaders;		// must already contain trailing \r\n if multiple
+	hdr += "Connection: close\r\n"
+		"\r\n";						// end of headers
+	return hdr;						// headers only (no body)
+}
+
 void receiveMessage(int index)
 {
 	SOCKET msgSocket = sockets[index].id;
@@ -391,8 +406,11 @@ void receiveMessage(int index)
 	}
 
 	std::string response, body;
+	bool isGET = (_stricmp(method.c_str(), "GET") == 0);
+	bool isHEAD = (_stricmp(method.c_str(), "HEAD") == 0);
+	bool isOPT = (_stricmp(method.c_str(), "OPTIONS") == 0);
 
-	if (_stricmp(method.c_str(), "GET") == 0)
+	if (isGET || isHEAD)
 	{
 		// Split path and query
 		std::string pathOnly = path;
@@ -405,7 +423,7 @@ void receiveMessage(int index)
 
 		if (pathOnly == "/" || pathOnly == "/index.html")
 		{
-			// Pick language by ?html= or ?lang= (default = en)
+			// Choose language by ?html= or ?lang= (default = en)
 			std::string lang = toLower(getQueryParam(path, "html"));
 			if (lang.empty()) lang = toLower(getQueryParam(path, "lang"));
 			if (lang != "he" && lang != "en") lang = "en";
@@ -415,47 +433,78 @@ void receiveMessage(int index)
 		}
 		else if (pathOnly.rfind("/assets/", 0) == 0)
 		{
-			// Static asset under www/assets
-			filePath = "www" + pathOnly;         // "/assets/style.css" -> "www/assets/style.css"
-			contentType = getContentTypeByExt(filePath);
+			filePath = "www" + pathOnly;               // e.g., /assets/style.css
+			contentType = getContentTypeByExt(filePath);  // -> text/css, etc.
 		}
 		else
 		{
-			// Optional: allow direct files under www (e.g. /foo.html)
-			filePath = "www" + pathOnly;            // e.g. "/foo.html" -> "www/foo.html"
+			// Optional: serve direct files under www (e.g., /foo.html)
+			filePath = "www" + pathOnly;
 			contentType = getContentTypeByExt(filePath);
 		}
 
-		// Basic safety check
 		if (!isSafePath(filePath))
 		{
 			body = "<!doctype html><html><head><meta charset=\"UTF-8\"><title>400</title></head>"
 				"<body><h1>400 Bad Request</h1></body></html>";
-			response = buildHttpResponse(body, "400 Bad Request", "text/html; charset=UTF-8");
+			response = buildHttpResponse(isHEAD ? "" : body, "400 Bad Request", "text/html; charset=UTF-8");
 		}
 		else
 		{
 			std::string fileData;
-			std::cout << "[DEBUG] opening: " << filePath << std::endl;
+			//std::cout << "[DEBUG] opening: " << filePath << std::endl;
 
 			if (readFileToString(filePath, fileData))
 			{
-				response = buildHttpResponse(fileData, "200 OK", contentType);
+				if (isHEAD)
+				{
+					// HEAD: send headers only, with the body size we would have sent
+					response = buildHttpHeaders("200 OK", contentType, fileData.size(), "");
+				}
+				else // GET
+				{
+					response = buildHttpResponse(fileData, "200 OK", contentType);
+				}
 			}
 			else
 			{
 				body = "<!doctype html><html><head><meta charset=\"UTF-8\"><title>404</title></head>"
 					"<body><h1>404 Not Found</h1><p>File not found.</p></body></html>";
-				response = buildHttpResponse(body, "404 Not Found", "text/html; charset=UTF-8");
+				if (isHEAD)
+					response = buildHttpHeaders("404 Not Found", "text/html; charset=UTF-8", body.size(), "");
+				else
+					response = buildHttpResponse(body, "404 Not Found", "text/html; charset=UTF-8");
 			}
 		}
 	}
+	else if (isOPT)
+	{
+		// OPTIONS: advertise supported methods
+		// (No body needed; returning 204 No Content is fine)
+		const std::string allow =
+			"Allow: GET, HEAD, OPTIONS, POST, PUT, DELETE, TRACE\r\n";
+
+		response = buildHttpHeaders("204 No Content",
+			"text/plain; charset=UTF-8",
+			0,
+			allow);
+	}
 	else
 	{
-		// Not implemented yet
-		body = "<!doctype html><html><head><meta charset=\"UTF-8\"><title>501</title></head>"
-			"<body><h1>501 Not Implemented</h1></body></html>";
-		response = buildHttpResponse(body, "501 Not Implemented", "text/html; charset=UTF-8");
+		// Not implemented yet (POST/PUT/DELETE/TRACE will be added later)
+		body = "<!doctype html><html><head><meta charset=\"UTF-8\"><title>405</title></head>"
+			"<body><h1>405 Method Not Allowed</h1></body></html>";
+
+		// It’s nice to include Allow here too:
+		const std::string allow =
+			"Allow: GET, HEAD, OPTIONS, POST, PUT, DELETE, TRACE\r\n";
+
+		// Send body for 405
+		std::string headersOnly = buildHttpHeaders("405 Method Not Allowed",
+			"text/html; charset=UTF-8",
+			body.size(),
+			allow);
+		response = headersOnly + body;
 	}
 
 	// Arm for send
