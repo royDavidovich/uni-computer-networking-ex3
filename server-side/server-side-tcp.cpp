@@ -1,19 +1,26 @@
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
 using namespace std;
 #pragma comment(lib, "Ws2_32.lib")
 #include <winsock2.h>
+#include <string>
 #include <string.h>
 #include <time.h>
+#include <fstream>
+#include <sstream>
+
+using std::string;
 
 struct SocketState
 {
-	SOCKET id;			// Socket handle
-	int	recv;			// Receiving?
-	int	send;			// Sending?
-	int sendSubType;	// Sending sub-type
-	char buffer[128];
-	int len;
+	SOCKET id;         // Socket handle
+	int recv;          // Receiving?
+	int send;          // Sending?
+	int sendSubType;   // Sending sub-type (unused for HTTP)
+	char buffer[4096]; // I/O buffer (bigger for HTTP)
+	int len;           // current bytes in buffer
+	int bytesToSend;   // response size when sending
 };
 
 const int TIME_PORT = 27015;
@@ -31,6 +38,9 @@ void removeSocket(int index);
 void acceptConnection(int index);
 void receiveMessage(int index);
 void sendMessage(int index);
+static string buildHttpResponse(const string& body,
+	const string& status = "200 OK",
+	const string& contentType = "text/html");
 
 struct SocketState sockets[MAX_SOCKETS] = { 0 };
 int socketsCount = 0;
@@ -259,16 +269,90 @@ void acceptConnection(int index)
 	return;
 }
 
+static bool readFileToString(const string& path, string& out)
+{
+	std::cout << "Trying to open file: " << path << std::endl;
+	std::ifstream f(path, std::ios::binary);
+	if (!f) return false;
+	std::ostringstream oss;
+	oss << f.rdbuf();
+	out = oss.str();
+	return true;
+}
+
+static bool isSafePath(const string& p)
+{
+	if (p.find("..") != string::npos) return false;
+	for (unsigned char c : p) if (c < 32) return false; // no control chars
+	return true;
+}
+
+static string toLower(string s)
+{
+	for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+	return s;
+}
+
+static string getQueryParam(const string& url, const string& key)
+{
+	size_t q = url.find('?');
+	if (q == string::npos) return "";
+	string qs = url.substr(q + 1);
+	size_t pos = 0;
+	while (pos < qs.size())
+	{
+		size_t amp = qs.find('&', pos);
+		string pair = qs.substr(pos, amp == string::npos ? string::npos : amp - pos);
+		size_t eq = pair.find('=');
+		if (eq != string::npos)
+		{
+			string k = pair.substr(0, eq);
+			string v = pair.substr(eq + 1);
+			if (toLower(k) == toLower(key)) return v; // simple, no URL-decoding
+		}
+		if (amp == string::npos) break;
+		pos = amp + 1;
+	}
+	return "";
+}
+
+static string getContentTypeByExt(const string& path)
+{
+	auto low = toLower(path);
+	if (low.rfind(".html") != string::npos) return "text/html; charset=UTF-8";
+	if (low.rfind(".htm") != string::npos) return "text/html; charset=UTF-8";
+	if (low.rfind(".css") != string::npos) return "text/css";
+	if (low.rfind(".js") != string::npos) return "application/javascript";
+	if (low.rfind(".json") != string::npos) return "application/json; charset=UTF-8";
+	if (low.rfind(".png") != string::npos) return "image/png";
+	if (low.rfind(".jpg") != string::npos || low.rfind(".jpeg") != string::npos) return "image/jpeg";
+	if (low.rfind(".gif") != string::npos) return "image/gif";
+	if (low.rfind(".svg") != string::npos) return "image/svg+xml";
+	return "text/plain; charset=UTF-8";
+}
+
+// Build a minimal HTTP/1.1 response with Connection: close
+static string buildHttpResponse(const string& body, const string& status, const string& contentType)
+{
+	string headers = "HTTP/1.1 " + status + "\r\n"
+		"Content-Type: " + contentType + "\r\n"
+		"Content-Length: " + std::to_string(body.size()) + "\r\n"
+		"Connection: close\r\n"
+		"\r\n";
+	return headers + body;
+}
+
 void receiveMessage(int index)
 {
 	SOCKET msgSocket = sockets[index].id;
 
 	int len = sockets[index].len;
-	int bytesRecv = recv(msgSocket, &sockets[index].buffer[len], sizeof(sockets[index].buffer) - len, 0);
+	int bytesRecv = recv(msgSocket, &sockets[index].buffer[len],
+		sizeof(sockets[index].buffer) - len, 0);
 
 	if (SOCKET_ERROR == bytesRecv)
 	{
-		cout << "Time Server: Error at recv(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at recv(): " << WSAGetLastError() << endl;
 		closesocket(msgSocket);
 		removeSocket(index);
 		return;
@@ -279,77 +363,126 @@ void receiveMessage(int index)
 		removeSocket(index);
 		return;
 	}
-	else
+
+	sockets[index].len += bytesRecv;
+	sockets[index].buffer[sockets[index].len] = '\0';
+
+	// Wait for end of headers: \r\n\r\n
+	char* headersEnd = strstr(sockets[index].buffer, "\r\n\r\n");
+	if (!headersEnd) return;
+
+	const char* req = sockets[index].buffer;
+
+	// ---- parse request line: METHOD SP PATH SP VERSION ----
+	std::string requestLine;
 	{
-		sockets[index].buffer[len + bytesRecv] = '\0'; //add the null-terminating to make it a string
-		cout << "Time Server: Recieved: " << bytesRecv << " bytes of \"" << &sockets[index].buffer[len] << "\" message.\n";
+		const char* lineEnd = strstr(req, "\r\n");
+		if (!lineEnd) lineEnd = headersEnd;
+		requestLine.assign(req, lineEnd);
+	}
 
-		sockets[index].len += bytesRecv;
+	std::string method, path, version;
+	{
+		size_t p1 = requestLine.find(' ');
+		size_t p2 = (p1 == std::string::npos) ? std::string::npos : requestLine.find(' ', p1 + 1);
+		if (p1 != std::string::npos) method = requestLine.substr(0, p1);
+		if (p1 != std::string::npos && p2 != std::string::npos) path = requestLine.substr(p1 + 1, p2 - (p1 + 1));
+		if (p2 != std::string::npos) version = requestLine.substr(p2 + 1);
+	}
 
-		if (sockets[index].len > 0)
+	std::string response, body;
+
+	if (_stricmp(method.c_str(), "GET") == 0)
+	{
+		// Split path and query
+		std::string pathOnly = path;
+		size_t qpos = pathOnly.find('?');
+		if (qpos != std::string::npos) pathOnly = pathOnly.substr(0, qpos);
+
+		// Decide which file to serve
+		std::string filePath;
+		std::string contentType;
+
+		if (pathOnly == "/" || pathOnly == "/index.html")
 		{
-			if (strncmp(sockets[index].buffer, "TimeString", 10) == 0)
+			// Pick language by ?html= or ?lang= (default = en)
+			std::string lang = toLower(getQueryParam(path, "html"));
+			if (lang.empty()) lang = toLower(getQueryParam(path, "lang"));
+			if (lang != "he" && lang != "en") lang = "en";
+
+			filePath = "www/index." + lang + ".html";
+			contentType = "text/html; charset=UTF-8";
+		}
+		else if (pathOnly.rfind("/assets/", 0) == 0)
+		{
+			// Static asset under www/assets
+			filePath = "www" + pathOnly;         // "/assets/style.css" -> "www/assets/style.css"
+			contentType = getContentTypeByExt(filePath);
+		}
+		else
+		{
+			// Optional: allow direct files under www (e.g. /foo.html)
+			filePath = "www" + pathOnly;            // e.g. "/foo.html" -> "www/foo.html"
+			contentType = getContentTypeByExt(filePath);
+		}
+
+		// Basic safety check
+		if (!isSafePath(filePath))
+		{
+			body = "<!doctype html><html><head><meta charset=\"UTF-8\"><title>400</title></head>"
+				"<body><h1>400 Bad Request</h1></body></html>";
+			response = buildHttpResponse(body, "400 Bad Request", "text/html; charset=UTF-8");
+		}
+		else
+		{
+			std::string fileData;
+			std::cout << "[DEBUG] opening: " << filePath << std::endl;
+
+			if (readFileToString(filePath, fileData))
 			{
-				sockets[index].send = SEND;
-				sockets[index].sendSubType = SEND_TIME;
-				memcpy(sockets[index].buffer, &sockets[index].buffer[10], sockets[index].len - 10);
-				sockets[index].len -= 10;
-				return;
+				response = buildHttpResponse(fileData, "200 OK", contentType);
 			}
-			else if (strncmp(sockets[index].buffer, "SecondsSince1970", 16) == 0)
+			else
 			{
-				sockets[index].send = SEND;
-				sockets[index].sendSubType = SEND_SECONDS;
-				memcpy(sockets[index].buffer, &sockets[index].buffer[16], sockets[index].len - 16);
-				sockets[index].len -= 16;
-				return;
-			}
-			else if (strncmp(sockets[index].buffer, "Exit", 4) == 0)
-			{
-				closesocket(msgSocket);
-				removeSocket(index);
-				return;
+				body = "<!doctype html><html><head><meta charset=\"UTF-8\"><title>404</title></head>"
+					"<body><h1>404 Not Found</h1><p>File not found.</p></body></html>";
+				response = buildHttpResponse(body, "404 Not Found", "text/html; charset=UTF-8");
 			}
 		}
 	}
+	else
+	{
+		// Not implemented yet
+		body = "<!doctype html><html><head><meta charset=\"UTF-8\"><title>501</title></head>"
+			"<body><h1>501 Not Implemented</h1></body></html>";
+		response = buildHttpResponse(body, "501 Not Implemented", "text/html; charset=UTF-8");
+	}
+
+	// Arm for send
+	size_t toCopy = (response.size() < (sizeof(sockets[index].buffer) - 1))
+		? response.size() : (sizeof(sockets[index].buffer) - 1);
+	memcpy(sockets[index].buffer, response.data(), toCopy);
+	sockets[index].buffer[toCopy] = '\0';
+	sockets[index].bytesToSend = (int)toCopy;
+	sockets[index].send = SEND;
 }
 
 void sendMessage(int index)
 {
-	int bytesSent = 0;
-	char sendBuff[255];
-
 	SOCKET msgSocket = sockets[index].id;
-	if (sockets[index].sendSubType == SEND_TIME)
-	{
-		// Answer client's request by the current time string.
 
-		// Get the current time.
-		time_t timer;
-		time(&timer);
-		// Parse the current time to printable string.
-		strcpy(sendBuff, ctime(&timer));
-		sendBuff[strlen(sendBuff) - 1] = 0; //to remove the new-line from the created string
-	}
-	else if (sockets[index].sendSubType == SEND_SECONDS)
-	{
-		// Answer client's request by the current time in seconds.
-
-		// Get the current time.
-		time_t timer;
-		time(&timer);
-		// Convert the number to string.
-		itoa((int)timer, sendBuff, 10);
-	}
-
-	bytesSent = send(msgSocket, sendBuff, (int)strlen(sendBuff), 0);
+	int bytesSent = send(msgSocket, sockets[index].buffer, sockets[index].bytesToSend, 0);
 	if (SOCKET_ERROR == bytesSent)
 	{
-		cout << "Time Server: Error at send(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at send(): " << WSAGetLastError() << endl;
+		closesocket(msgSocket);
+		removeSocket(index);
 		return;
 	}
 
-	cout << "Time Server: Sent: " << bytesSent << "\\" << strlen(sendBuff) << " bytes of \"" << sendBuff << "\" message.\n";
+	cout << "Web Server: Sent " << bytesSent << "/" << sockets[index].bytesToSend << " bytes.\n";
 
-	sockets[index].send = IDLE;
+	// HTTP/1.1 with Connection: close -> close after single response
+	closesocket(msgSocket);
+	removeSocket(index);
 }
