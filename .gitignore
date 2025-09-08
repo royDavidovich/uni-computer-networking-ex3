@@ -37,5 +37,38 @@
 *.out
 *.app
 
-# debug information files
+# Debug information files
 *.dwo
+
+# Visual Studio
+.vs/
+*.vcxproj
+*.vcxproj.user
+*.vcxproj.filters
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild/
+bld/
+[Bb]in/
+[Oo]bj/
+
+# Other VS cache
+*.db
+*.db-shm
+*.db-wal
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+
+# Auto-generated files
+*.log
+*.tlog
+*.lastbuildstate
