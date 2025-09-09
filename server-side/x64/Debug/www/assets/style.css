@@ -1,0 +1,5 @@
+* { box-sizing: border-box; }
+body { font-family: system-ui, Arial, sans-serif; margin: 2rem; line-height: 1.6; }
+h1 { margin: 0 0 .5rem; }
+nav a { text-decoration: none; padding: .1rem .3rem; }
+nav a:hover { text-decoration: underline; }
