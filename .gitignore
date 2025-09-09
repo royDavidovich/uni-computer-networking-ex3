@@ -42,7 +42,6 @@
 
 # Visual Studio
 .vs/
-*.vcxproj
 *.vcxproj.user
 *.vcxproj.filters
 *.suo
