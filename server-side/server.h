@@ -16,7 +16,7 @@ struct SocketState
     int recv;          // Receiving state
     int send;          // Sending state
     int sendSubType;   // Unused for HTTP
-    char buffer[4096]; // I/O buffer
+    char buffer[65536]; // I/O buffer
     int len;           // Current bytes in buffer
     int bytesToSend;   // Response bytes to send
 };
