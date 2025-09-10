@@ -1,12 +1,275 @@
-<!doctype html><html lang="he" dir="rtl"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>שלום</title>
-<link rel="stylesheet" href="/assets/style.css">
-</head><body>
-<h1>שלום משרת ה-Web הקטן שלנו</h1>
-<p>זוהי הגרסה העברית.</p>
-<nav>
-  <a href="/?lang=en">English</a> |
-  <a href="/?lang=he">עברית</a> |
-</nav>
-</body></html>
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>חנות ארנבים 🐇</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body class="rtl">
+<header class="site-header">
+  <div class="brand">
+    <span class="logo">🐇</span>
+    <h1>חנות ארנבים</h1>
+  </div>
+  <nav>
+    <a href="/?lang=he" class="active">HE</a>
+    <a href="/?lang=en">EN</a>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <h2>מאמצים חבר פרוותי כבר היום</h2>
+    <p>אוזניים רכות, קפיצות גבוהות, ואהבה בלתי נגמרת. (וגם גזרים.)</p>
+  </section>
+
+  <section class="grid">
+    <article class="card">
+      <div class="card-body">
+        <h3>שלגיה</h3>
+        <p>רגועה ולבנה. אוהבת שנ"צ ומוסיקה קלאסית.</p>
+        <div class="price-row">
+          <span class="price">₪49</span>
+          <button class="btn" data-id="snowy" data-name="שלגית" data-price="49">הוסף לסל</button>
+        </div>
+      </div>
+      <img src="https://www.petscorner.co.uk/Images/Article/large/pc-ah-rabbit-myths-article2.jpg" alt="ארנבת לבנה" />
+    </article>
+
+    <article class="card">
+      <div class="card-body">
+        <h3>מוקה</h3>
+        <p>סקרן ומצחיק. יבדוק כל פינה בבית.</p>
+        <div class="price-row">
+          <span class="price">₪59</span>
+          <button class="btn" data-id="mocha" data-name="מוקה" data-price="59">הוסף לסל</button>
+        </div>
+      </div>
+      <img src="https://i.pinimg.com/736x/b0/b0/d2/b0b0d2d7798c92fc658cd62cc914e395.jpg" alt="ארנב חום" />
+    </article>
+
+    <article class="card">
+      <div class="card-body">
+        <h3>ניסים</h3>
+        <p>פשוט רגוע. אלוף רביצה וחובב גזרים ידוע.</p>
+        <div class="price-row">
+          <span class="price">₪69</span>
+          <button class="btn" data-id="misty" data-name="ערפלי" data-price="69">הוסף לסל</button>
+        </div>
+      </div>
+      <img src="https://thehoppyhome.co.uk/wp-content/uploads/2018/01/File-28-01-2018-22-42-44.jpeg" alt="ארנב אפור" />
+    </article>
+  </section>
+
+  <section class="cart">
+    <h2>הסל שלי</h2>
+    <div id="cart-empty">הסל ריק.</div>
+    <ul id="cart-list" class="cart-list"></ul>
+    <div class="cart-summary">
+      <span>סה״כ:</span>
+      <strong id="cart-total">₪0</strong>
+      <button id="checkout" class="btn secondary" disabled>לתשלום</button>
+    </div>
+  </section>
+
+  <section class="http-playground">
+    <h2>מעבדת HTTP</h2>
+    <p>מכאן אפשר לשלוח בקשות לשירות ה-C++ שלך ולבדוק מתודות שונות.</p>
+
+    <form id="http-form" class="http-form" onsubmit="return false;">
+      <label>
+        מתודה
+        <select id="method">
+          <option>GET</option>
+          <option>HEAD</option>
+          <option>POST</option>
+          <option>PUT</option>
+          <option>DELETE</option>
+          <option>OPTIONS</option>
+          <option value="TRACE">TRACE (דרך טרמינל)</option>
+        </select>
+      </label>
+
+      <label>
+        נתיב
+        <input id="path" type="text" value="/" placeholder="/, /api, /rabbits וכד׳" />
+      </label>
+
+      <label>
+        גוף הבקשה (ל-POST/PUT/DELETE)
+        <textarea id="body" rows="5" placeholder='{"sample":"data"}'></textarea>
+      </label>
+
+      <div class="actions">
+        <button id="send" class="btn">שלח</button>
+        <button id="clear" class="btn subtle" type="button">נקה</button>
+      </div>
+    </form>
+
+    <div id="trace-note" class="note hidden">
+      <p><strong>דפדפנים חוסמים TRACE</strong> מסיבות אבטחה. השתמש/י בפקודה:</p>
+      <pre><code id="trace-curl">curl -i -X TRACE http://127.0.0.1:27015/</code></pre>
+    </div>
+
+    <div class="result">
+      <h3>תגובה</h3>
+      <div class="two-col">
+        <div>
+          <h4>סטטוס וכותרות</h4>
+          <pre id="resp-meta">(אין תגובה עדיין)</pre>
+        </div>
+        <div>
+          <h4>גוף</h4>
+          <pre id="resp-body">(אין תגובה עדיין)</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <small>© <span id="year"></span> חנות ארנבים. פועל על גבי השרת שלך.</small>
+</footer>
+
+<script>
+/* התאמות RTL בסיסיות מתנהלות ב-CSS; הקוד זהה לגרסה האנגלית. */
+/* ---- Cart ---- */
+const cart = [];
+const list = document.getElementById('cart-list');
+const empty = document.getElementById('cart-empty');
+const totalEl = document.getElementById('cart-total');
+const checkoutBtn = document.getElementById('checkout');
+
+function renderCart() {
+  list.innerHTML = '';
+  if (cart.length === 0) {
+    empty.style.display = 'block';
+    checkoutBtn.disabled = true;
+    totalEl.textContent = (document.documentElement.lang === 'he') ? '₪0' : '$0';
+    return;
+  }
+  empty.style.display = 'none';
+  let total = 0;
+  cart.forEach(item => {
+    const li = document.createElement('li');
+    li.className = 'cart-item';
+    li.innerHTML = `
+      <span>${item.name}</span>
+      <div class="qty">
+        <button class="qty-btn" data-act="dec" data-id="${item.id}">−</button>
+        <span>${item.qty}</span>
+        <button class="qty-btn" data-act="inc" data-id="${item.id}">+</button>
+      </div>
+      <strong>${currency(item.price * item.qty)}</strong>
+      <button class="remove" data-id="${item.id}">×</button>
+    `;
+    list.appendChild(li);
+    total += item.price * item.qty;
+  });
+  totalEl.textContent = currency(total);
+  checkoutBtn.disabled = false;
+}
+
+function currency(n){ return (document.documentElement.lang === 'he') ? `₪${n}` : `$${n}`; }
+
+document.querySelectorAll('.card .btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.id, name = btn.dataset.name, price = Number(btn.dataset.price);
+    const existing = cart.find(i => i.id === id);
+    if (existing) existing.qty += 1; else cart.push({ id, name, price, qty: 1 });
+    renderCart();
+  });
+});
+
+list.addEventListener('click', (e) => {
+  const id = e.target.dataset.id;
+  if (!id) return;
+  const item = cart.find(i => i.id === id);
+  if (!item) return;
+  if (e.target.classList.contains('remove')) {
+    const ix = cart.findIndex(i => i.id === id);
+    cart.splice(ix, 1);
+  } else if (e.target.dataset.act === 'inc') {
+    item.qty += 1;
+  } else if (e.target.dataset.act === 'dec') {
+    item.qty = Math.max(1, item.qty - 1);
+  }
+  renderCart();
+});
+
+checkoutBtn.addEventListener('click', () => {
+  alert('תודה! (בדמו הזה הכל נשאר בצד הלקוח)');
+});
+
+/* ---- HTTP Playground ---- */
+const methodSel = document.getElementById('method');
+const pathInput = document.getElementById('path');
+const bodyInput = document.getElementById('body');
+const sendBtn = document.getElementById('send');
+const clearBtn = document.getElementById('clear');
+const metaEl = document.getElementById('resp-meta');
+const bodyEl = document.getElementById('resp-body');
+const traceNote = document.getElementById('trace-note');
+const traceCurl = document.getElementById('trace-curl');
+
+function showTraceNote() {
+  const url = new URL(pathInput.value, window.location.origin).toString();
+  traceCurl.textContent = `curl -i -X TRACE ${url}`;
+  traceNote.classList.remove('hidden');
+}
+function hideTraceNote() { traceNote.classList.add('hidden'); }
+
+methodSel.addEventListener('change', () => {
+  if (methodSel.value === 'TRACE') showTraceNote(); else hideTraceNote();
+});
+
+sendBtn.addEventListener('click', async () => {
+  const method = methodSel.value;
+  const url = new URL(pathInput.value || '/', window.location.origin).toString();
+
+  if (method === 'TRACE') {
+    showTraceNote();
+    metaEl.textContent = '(דפדפן לא ישלח TRACE. השתמש/י בפקודת curl שמופיעה מעלה.)';
+    bodyEl.textContent = '';
+    return;
+  }
+
+  metaEl.textContent = 'שולח...';
+  bodyEl.textContent = '';
+
+  try {
+    const init = { method, headers: {} };
+    if (['POST','PUT','DELETE'].includes(method)) {
+      const text = bodyInput.value || '';
+      init.body = text;
+      init.headers['Content-Type'] = 'text/plain; charset=UTF-8';
+    }
+
+    const resp = await fetch(url, init);
+    let meta = `${resp.status} ${resp.statusText}\n`;
+    resp.headers.forEach((v, k) => { meta += `${k}: ${v}\n`; });
+    metaEl.textContent = meta.trim();
+
+    if (method === 'HEAD') {
+      bodyEl.textContent = '(אין גוף תשובה ל-HEAD)';
+      return;
+    }
+
+    const text = await resp.text();
+    bodyEl.textContent = text || '(גוף ריק)';
+  } catch (err) {
+    metaEl.textContent = 'שגיאת בקשה';
+    bodyEl.textContent = String(err);
+  }
+});
+
+clearBtn.addEventListener('click', () => {
+  metaEl.textContent = '(אין תגובה עדיין)';
+  bodyEl.textContent = '(אין תגובה עדיין)';
+});
+
+document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>
