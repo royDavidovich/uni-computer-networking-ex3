@@ -9,6 +9,7 @@ using std::string;
 // -----------------------
 // Globals
 // -----------------------
+const std::string DOC_ROOT = "C:/temp/www";
 SocketState sockets[MAX_SOCKETS] = { 0 };
 int socketsCount = 0;
 
@@ -152,17 +153,17 @@ void receiveMessage(int index)
             if (lang.empty()) lang = toLower(getQueryParam(path, "lang"));
             if (lang != "he" && lang != "en") lang = "en";
 
-            filePath = "www/index." + lang + ".html";
+            filePath = DOC_ROOT + "/index." + lang + ".html";
             contentType = "text/html; charset=UTF-8";
         }
         else if (pathOnly.rfind("/assets/", 0) == 0)
         {
-            filePath = "www" + pathOnly;
+            filePath = DOC_ROOT + pathOnly;
             contentType = getContentTypeByExt(filePath);
         }
         else
         {
-            filePath = "www" + pathOnly;
+            filePath = DOC_ROOT + pathOnly;
             contentType = getContentTypeByExt(filePath);
         }
 
@@ -234,7 +235,7 @@ void receiveMessage(int index)
         std::string pathOnly = path;
         size_t qpos = pathOnly.find('?');
         if (qpos != std::string::npos) pathOnly = pathOnly.substr(0, qpos);
-        std::string filePath = (pathOnly == "/" || pathOnly.empty()) ? "www/upload.txt" : "www" + pathOnly;
+        std::string filePath = (pathOnly == "/" || pathOnly.empty()) ? DOC_ROOT+ "/upload.txt" : DOC_ROOT + pathOnly;
 
         if (!isSafePath(filePath))
         {
@@ -299,7 +300,7 @@ void receiveMessage(int index)
         }
         else
         {
-            std::string filePath = "www" + pathOnly;
+            std::string filePath = DOC_ROOT + pathOnly;
 
             if (!isSafePath(filePath))
             {
